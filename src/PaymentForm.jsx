@@ -7,12 +7,14 @@ class PaymentForm extends React.Component {
     this.state = {
       loan: {
 	balance: 0,
-	interest: 0
+	interest: 0,
+	loanCreated: false,
       },
       paymentDue: 0,
       desirePay: 0,
       payoffNumber: 0,
-      payments: []
+      payments: [],
+      headers: ['Total', 'Principal', 'Interest', 'Balance'],
     }
   }
 
@@ -39,34 +41,39 @@ class PaymentForm extends React.Component {
 
   calcPayment(event) {
     const {loan} = this.state;
-    const {balance, interest} = loan;
+    let {balance, interest} = loan;
     let testBalance = balance;
     let count = 0;
+    let firstTotalDue = 0;
     do {
-      let principalDue = testBalance * 0.01;
-      if (principalDue < 100) {
-	principalDue += 100;
-      }
-      const interestDue = Math.trunc((testBalance * (interest / 100)) / 12);
-      let totalDue = principalDue + interestDue;
-      totalDue = Math.round(totalDue * 100) / 100;
+      const loanCalc = this.calcDueAmounts(testBalance, interest);
       if ( ++count == 1 ) {
-	this.setState({paymentDue: totalDue});
-	this.setState({desirePay: totalDue});
+	firstTotalDue = loanCalc.totalDue;
       }
-      testBalance -= principalDue;
+      testBalance -= loanCalc.principalDue;
     } while (testBalance > 0);
-    this.setState({payoffNumber: count});
-    document.getElementById("loan").disabled = true;
-    document.getElementById("interest").disabled = true;
-    document.getElementById("calculate").disabled = true;
-    document.getElementById("payoff").disabled = true;
-    document.getElementById("payment").disabled = false;
-    document.getElementById("apply").disabled = false;
+    loan.loanCreated = true;
+    this.setState({paymentDue: firstTotalDue, desirePay: firstTotalDue, payoffNumber: count, loan: loan});
+  }
+
+  calcDueAmounts(balance, interest) {
+    let principalDue = 0;
+    let interestDue = 0;
+    if (balance < 100) {
+      principalDue = balance;
+      interestDue = Math.round(balance * 0.01 * 100) / 100;
+    }
+    else {
+      principalDue = balance * 0.01;
+      interestDue = Math.round(balance * interest / 12) / 100;
+    }
+    let totalDue = principalDue + interestDue;
+    totalDue = Math.round(totalDue * 100) / 100;
+    return ({totalDue, principalDue, interestDue});
   }
 
   applyPayment(event) {
-    let {desirePay, paymentDue, loan, payments} = this.state;
+    let {desirePay, paymentDue, loan, payments, headers} = this.state;
     let {balance, interest} = loan;
     if (paymentDue == 0) {
       return;
@@ -83,56 +90,53 @@ class PaymentForm extends React.Component {
       alert('You must pay at least ' + paymentDue + '.');
       return;
     }
-    let principalDue = balance * 0.01;
-    if (principalDue < 100) {
-      principalDue += 100;
-    }
-    const interestDue = Math.trunc((balance * (interest / 100)) / 12);
-    const totalDue = principalDue + interestDue;
-    const overPayment = desirePay - totalDue;
-    let newBalance = balance - (principalDue + overPayment);
+    const loanCalc = this.calcDueAmounts(balance, interest);
+    const overPayment = desirePay - loanCalc.totalDue;
+    let newBalance = balance - (loanCalc.principalDue + overPayment);
     if (newBalance < 0) {
-      principalDue += newBalance;
+      loanCalc.principalDue += newBalance;
       desirePay = 0;
       newBalance = 0;
     }
     const payment = new Object();
-    payment['total'] = desirePay;
-    payment['principal'] = principalDue + overPayment;
-    payment['interest'] = interestDue;
-    payment['balance'] = newBalance;
+    payment[headers[0]] = desirePay;
+    payment[headers[1]] = loanCalc.principalDue + overPayment;
+    payment[headers[2]] = loanCalc.interestDue;
+    payment[headers[3]] = newBalance;
+    payment['key'] = payments.length;
     const newPayments = payments;
     newPayments.push(payment);
-    this.setState({payments: newPayments});
     loan.balance = newBalance;
-    this.setState({loan: loan});
+    this.setState({payments: newPayments, loan: loan});
     this.calcPayment(event);
   }
 
   render() {
+    let {desirePay, paymentDue, loan, payments, headers, payoffNumber} = this.state;
+    let {balance, interest, loanCreated} = loan;
     return (
       <div>
 	<form>
 	  <label htmlFor="loan">Starting loan amount: </label>
-	  <input type="number" min="1000" id="loan" name="loan" value={this.state.loan.balance} onKeyPress={this.validateKey} onChange={this.loanChanged.bind(this)} /><br />
+	  <input type="number" min="1000" id="loan" name="loan" value={balance} onKeyPress={this.validateKey} onChange={this.loanChanged.bind(this)} disabled={loanCreated}/><br />
 
 	  <label htmlFor="interest">Interest rate: </label>
-	  <input type="number" min="0.1" max="100" id="interest" name="interest" value={this.state.loan.interest} onKeyPress={this.validateKey} onChange={this.interestChanged.bind(this)} /><br />
+	  <input type="number" min="0.1" max="100" id="interest" name="interest" value={interest} onKeyPress={this.validateKey} onChange={this.interestChanged.bind(this)} disabled={loanCreated} /><br />
 
-	  <input type="button" id="calculate" value="Calculate Payment" onClick={this.calcPayment.bind(this)} /><br /><br />
+	  <input type="button" id="calculate" value="Calculate Payment" onClick={this.calcPayment.bind(this)} disabled={loanCreated} /><br /><br />
 
 	  <label htmlFor="payoff"># of payments to payoff: </label>
-	  <input type="number" id="payoff" name="payoff" value={this.state.payoffNumber} disabled /><br />
+	  <input type="number" id="payoff" name="payoff" value={payoffNumber} disabled /><br />
 
 	  <label htmlFor="due">Payment due: </label>
-	  <input type="number" id="due" name="due" value={this.state.paymentDue} disabled /><br />
+	  <input type="number" id="due" name="due" value={paymentDue} disabled /><br />
 
 	  <label htmlFor="payment">I want to pay: </label>
-	  <input type="number" id="payment" name="payment" value={this.state.desirePay} disabled onKeyPress={this.validateKey} onChange={this.paymentChanged.bind(this)} /><br />
+	  <input type="number" id="payment" name="payment" value={desirePay} onKeyPress={this.validateKey} onChange={this.paymentChanged.bind(this)} disabled={!loanCreated || balance == 0} /><br />
 
-	  <input type="button" id="apply" value="Apply Payment" onClick={this.applyPayment.bind(this)} /><br /><br />
+	  <input type="button" id="apply" value="Apply Payment" onClick={this.applyPayment.bind(this)} disabled={!loanCreated || balance == 0} /><br /><br />
 	</form> 
-        <PaymentHistory payments={this.state.payments} />
+        <PaymentHistory payments={payments} headers={headers}/>
       </div>
     )
   }
